@@ -28,6 +28,11 @@ private:
                               const std::string &module_name, const T &response,
                               std::string_view failure_message) const;
 
+  using PSBTParseFn = std::optional<std::string> (BaseModule::*)(
+      std::span<const uint8_t>) const;
+  void PSBTParseCompare(std::span<const uint8_t> buffer,
+                        PSBTParseFn parse) const;
+
 public:
   Driver(ModuleLogger &logger, bool log_outputs = false)
       : module_logger(logger), log_outputs(log_outputs) {}
@@ -42,7 +47,8 @@ public:
   void Run(const uint8_t *data, const size_t size,
            const std::string &target) const;
   void AddressParseTarget(std::span<const uint8_t> buffer) const;
-  void PSBTParseTarget(std::span<const uint8_t> buffer) const;
+  void PSBTv0ParseTarget(std::span<const uint8_t> buffer) const;
+  void PSBTv2ParseTarget(std::span<const uint8_t> buffer) const;
   void AddrV2Target(std::span<const uint8_t> buffer) const;
   void OfferDeserializationTarget(std::span<const uint8_t> buffer) const;
   void CompactBlocksTarget(std::span<const uint8_t> buffer) const;

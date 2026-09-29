@@ -74,7 +74,7 @@ Btcd::addrv2_parse(std::span<const uint8_t> buffer) const {
 }
 
 std::optional<std::string>
-Btcd::psbt_parse(std::span<const uint8_t> buffer) const {
+Btcd::psbt_v0_parse(std::span<const uint8_t> buffer) const {
   ByteArray script;
   script.data = (char *)buffer.data();
   script.length = buffer.size();

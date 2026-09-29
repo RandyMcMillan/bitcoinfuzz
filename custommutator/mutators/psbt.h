@@ -25,18 +25,25 @@
  * buffer into maps until it runs out.
  *
  * Random byte-level mutation rarely produces a well-formed map (let alone
- * one containing the PSBT_GLOBAL_VERSION/INPUT_COUNT/OUTPUT_COUNT fields
- * required for a v2 psbt to be accepted at all), so this mutator instead:
+ * one containing the fields required for a psbt to be accepted at all), so
+ * this mutator instead:
  *   1. Parses the input into maps of records.
  *   2. Applies structure-aware mutations: mutate a record's key or value,
- *      remove/duplicate a record, insert a well-known field (biased
- *      towards PSBTv2-only fields to help the fuzzer reach that code
- *      path), or add/remove a whole map.
+ *      remove/duplicate a record, insert a well-known field of the targeted
+ *      version, or add/remove a whole map.
  *   3. Reserializes back to the wire format.
  * When the input doesn't parse as a well-formed PSBT container at all
- * (e.g. too short, bad magic), it falls back to a valid PSBTv2 template so
- * libFuzzer always has a well-formed structure to mutate from.
+ * (e.g. too short, bad magic), it falls back to a valid template of the
+ * targeted version so libFuzzer always has a well-formed structure to mutate
+ * from.
+ *
+ * The targeted version is picked at build time: CUSTOM_MUTATOR_PSBT_V0 for
+ * the psbt_v0_parse target, CUSTOM_MUTATOR_PSBT_V2 for psbt_v2_parse.
  */
+
+#if defined(CUSTOM_MUTATOR_PSBT_V0) && defined(CUSTOM_MUTATOR_PSBT_V2)
+#error "CUSTOM_MUTATOR_PSBT_V0 and _V2 are mutually exclusive"
+#endif
 
 #include <algorithm>
 #include <cstdint>
@@ -214,6 +221,12 @@ std::vector<uint8_t> serialize_psbt(const std::vector<Map> &maps) {
   return out;
 }
 
+void push_le32(std::vector<uint8_t> &out, uint32_t value) {
+  for (int i = 0; i < 4; i++) {
+    out.push_back(static_cast<uint8_t>(value >> (8 * i)));
+  }
+}
+
 void push_record(Map &m, uint8_t key_type, std::vector<uint8_t> value) {
   Record rec;
   rec.key = {key_type};
@@ -221,10 +234,32 @@ void push_record(Map &m, uint8_t key_type, std::vector<uint8_t> value) {
   m.records.push_back(std::move(rec));
 }
 
+// A minimal, valid PSBTv0 template: a global unsigned tx with 1 input and 1
+// output, followed by empty input/output maps. Used to seed/reset the corpus
+// whenever the fuzzer-provided input doesn't parse as a well-formed PSBT
+// container at all.
+[[maybe_unused]] std::vector<uint8_t> build_psbtv0_template() {
+  std::vector<uint8_t> tx;
+  push_le32(tx, 2);           // tx version
+  tx.push_back(1);            // vin count
+  tx.insert(tx.end(), 32, 0); // prevout txid
+  push_le32(tx, 0);           // prevout index
+  tx.push_back(0);            // empty scriptSig
+  push_le32(tx, 0xffffffff);  // sequence
+  tx.push_back(1);            // vout count
+  tx.insert(tx.end(), 8, 0);  // amount
+  tx.push_back(0);            // empty scriptPubKey
+  push_le32(tx, 0);           // locktime
+
+  std::vector<Map> maps(3);
+  push_record(maps[0], 0x00, std::move(tx)); // PSBT_GLOBAL_UNSIGNED_TX
+  return serialize_psbt(maps);
+}
+
 // A minimal, valid PSBTv2 template (1 input, 1 output, required fields
 // only). Used to seed/reset the corpus whenever the fuzzer-provided input
 // doesn't parse as a well-formed PSBT container at all.
-std::vector<uint8_t> build_psbtv2_template() {
+[[maybe_unused]] std::vector<uint8_t> build_psbtv2_template() {
   std::vector<Map> maps(3);
 
   push_record(maps[0], 0xFB, {2, 0, 0, 0}); // PSBT_GLOBAL_VERSION = 2
@@ -242,11 +277,58 @@ std::vector<uint8_t> build_psbtv2_template() {
   return serialize_psbt(maps);
 }
 
+enum class KeyData {
+  NONE,   // single-byte key
+  PUBKEY, // <keytype><33-byte compressed pubkey>
+};
+
+enum class ValueKind {
+  RANDOM, // `value_len` random bytes
+  TXOUT,  // <8-byte amount><compactsize script len><script>
+};
+
 struct KnownKey {
   uint8_t type;
   size_t value_len; // 0 => pick a random length
+  KeyData key_data = KeyData::NONE;
+  ValueKind value_kind = ValueKind::RANDOM;
 };
 
+// The secp256k1 generator point, compressed. Parsers validate pubkeys in
+// keydata, so random bytes would almost never get past that check.
+constexpr uint8_t VALID_PUBKEY[33] = {
+    0x02, 0x79, 0xbe, 0x66, 0x7e, 0xf9, 0xdc, 0xbb, 0xac, 0x55, 0xa0,
+    0x62, 0x95, 0xce, 0x87, 0x0b, 0x07, 0x02, 0x9b, 0xfc, 0xdb, 0x2d,
+    0xce, 0x28, 0xd9, 0x59, 0xf2, 0x81, 0x5b, 0x16, 0xf8, 0x17, 0x98};
+
+#ifdef CUSTOM_MUTATOR_PSBT_V0
+// BIP-174 key types for a PSBTv0 input/output map. The global pool instead
+// holds PSBTv2-only fields, which a v0 parser must reject.
+constexpr KnownKey GLOBAL_KEYS[] = {
+    {0xFB, 4}, // PSBT_GLOBAL_VERSION
+    {0x02, 4}, // PSBT_GLOBAL_TX_VERSION
+    {0x03, 4}, // PSBT_GLOBAL_FALLBACK_LOCKTIME
+};
+
+constexpr KnownKey INPUT_KEYS[] = {
+    {0x01, 0, KeyData::NONE, ValueKind::TXOUT}, // PSBT_IN_WITNESS_UTXO
+    {0x02, 72, KeyData::PUBKEY},                // PSBT_IN_PARTIAL_SIG
+    {0x03, 4},                                  // PSBT_IN_SIGHASH_TYPE
+    {0x04, 0},                                  // PSBT_IN_REDEEM_SCRIPT
+    {0x05, 0},                                  // PSBT_IN_WITNESS_SCRIPT
+    {0x06, 8, KeyData::PUBKEY},                 // PSBT_IN_BIP32_DERIVATION
+    {0x07, 0},                                  // PSBT_IN_FINAL_SCRIPTSIG
+    {0x08, 0},                                  // PSBT_IN_FINAL_SCRIPTWITNESS
+};
+
+constexpr KnownKey OUTPUT_KEYS[] = {
+    {0x00, 0},                  // PSBT_OUT_REDEEM_SCRIPT
+    {0x01, 0},                  // PSBT_OUT_WITNESS_SCRIPT
+    {0x02, 8, KeyData::PUBKEY}, // PSBT_OUT_BIP32_DERIVATION
+};
+
+std::vector<uint8_t> build_template() { return build_psbtv0_template(); }
+#else
 // Key types legal in a PSBTv2 global/input/output map. Weighted towards
 // v2-only fields (version, counts, per-input previous-txid/output-index/
 // locktimes) since those are exactly what's needed to get past the
@@ -274,6 +356,9 @@ constexpr KnownKey OUTPUT_KEYS[] = {
     {0x04, 0}, // PSBT_OUT_SCRIPT
 };
 
+std::vector<uint8_t> build_template() { return build_psbtv2_template(); }
+#endif
+
 std::vector<uint8_t> random_bytes(size_t n) {
   std::vector<uint8_t> v(n);
   for (uint8_t &b : v) {
@@ -285,9 +370,20 @@ std::vector<uint8_t> random_bytes(size_t n) {
 Record make_known_record(const KnownKey &k) {
   Record rec;
   rec.key = {k.type};
+  if (k.key_data == KeyData::PUBKEY) {
+    rec.key.insert(rec.key.end(), std::begin(VALID_PUBKEY),
+                   std::end(VALID_PUBKEY));
+  }
   const size_t len =
       k.value_len ? k.value_len : static_cast<size_t>(rand() % 64);
-  rec.value = random_bytes(len);
+  if (k.value_kind == ValueKind::TXOUT) {
+    rec.value = random_bytes(8);
+    encode_compact_size(rec.value, len);
+    const std::vector<uint8_t> script = random_bytes(len);
+    rec.value.insert(rec.value.end(), script.begin(), script.end());
+  } else {
+    rec.value = random_bytes(len);
+  }
   return rec;
 }
 
@@ -343,7 +439,7 @@ void mutate_maps(std::vector<Map> &maps) {
         m.records[static_cast<size_t>(rand()) % m.records.size()]);
     break;
   }
-  case 4: { // insert a well-known field, biased towards PSBTv2-only fields
+  case 4: { // insert a well-known field of the targeted version
     const int which = rand() % 3;
     const KnownKey *pool = GLOBAL_KEYS;
     size_t pool_size = std::size(GLOBAL_KEYS);
@@ -378,7 +474,7 @@ extern "C" size_t LLVMFuzzerCustomMutator(uint8_t *fuzz_data, size_t size,
 
   std::vector<Map> maps = parse_psbt(fuzz_data, size);
   if (maps.empty()) {
-    const std::vector<uint8_t> tmpl = build_psbtv2_template();
+    const std::vector<uint8_t> tmpl = build_template();
     const size_t n = std::min(tmpl.size(), max_size);
     memcpy(fuzz_data, tmpl.data(), n);
     return n;

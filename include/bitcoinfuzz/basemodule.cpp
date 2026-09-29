@@ -64,7 +64,12 @@ BaseModule::address_parse(std::string /*str*/) const {
 }
 
 std::optional<std::string>
-BaseModule::psbt_parse(std::span<const uint8_t> /*buffer*/) const {
+BaseModule::psbt_v0_parse(std::span<const uint8_t> /*buffer*/) const {
+  return std::nullopt;
+}
+
+std::optional<std::string>
+BaseModule::psbt_v2_parse(std::span<const uint8_t> /*buffer*/) const {
   return std::nullopt;
 }
 

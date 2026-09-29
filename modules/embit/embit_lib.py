@@ -27,9 +27,12 @@ def descriptor_parse(input):
         return False
 
 
-def psbt_parse(data):
+def psbt_v0_parse(data):
     try:
         psbt_obj = PSBT.parse(data)
+        # PSBTv2 is covered by the psbt_v2_parse target
+        if psbt_obj.version == 2:
+            return None
 
         result = []  # format similar to rustbitcoin implementation
 

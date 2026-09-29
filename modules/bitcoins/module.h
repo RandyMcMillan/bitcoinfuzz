@@ -21,7 +21,7 @@ public:
       std::span<const uint8_t> buffer) const override;
 
   std::optional<std::string>
-  psbt_parse(std::span<const uint8_t> buffer) const override;
+  psbt_v0_parse(std::span<const uint8_t> buffer) const override;
 
   ~BitcoinS() noexcept override = default;
 };

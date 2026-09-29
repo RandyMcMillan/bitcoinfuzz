@@ -246,12 +246,23 @@ void Driver::AddressParseTarget(std::span<const uint8_t> buffer) const {
   }
 }
 
-void Driver::PSBTParseTarget(std::span<const uint8_t> buffer) const {
+// Modules return std::nullopt for PSBTs of the other version, so each target
+// only compares the implementations that actually parsed its version.
+void Driver::PSBTv0ParseTarget(std::span<const uint8_t> buffer) const {
+  PSBTParseCompare(buffer, &BaseModule::psbt_v0_parse);
+}
+
+void Driver::PSBTv2ParseTarget(std::span<const uint8_t> buffer) const {
+  PSBTParseCompare(buffer, &BaseModule::psbt_v2_parse);
+}
+
+void Driver::PSBTParseCompare(std::span<const uint8_t> buffer,
+                              PSBTParseFn parse) const {
   std::optional<std::string> last_response{std::nullopt};
   std::string last_module_name;
 
   for (auto &module : modules) {
-    std::optional<std::string> res{module.second->psbt_parse(buffer)};
+    std::optional<std::string> res{((*module.second).*parse)(buffer)};
     if (!res.has_value())
       continue;
 
@@ -1328,8 +1339,10 @@ void Driver::Run(const uint8_t *data, const size_t size,
     this->InvoiceDeserializationTarget(buffer);
   } else if (target == "address_parse") {
     this->AddressParseTarget(buffer);
-  } else if (target == "psbt_parse") {
-    this->PSBTParseTarget(buffer);
+  } else if (target == "psbt_v0_parse") {
+    this->PSBTv0ParseTarget(buffer);
+  } else if (target == "psbt_v2_parse") {
+    this->PSBTv2ParseTarget(buffer);
   } else if (target == "addrv2") {
     this->AddrV2Target(buffer);
   } else if (target == "deserialize_offer") {

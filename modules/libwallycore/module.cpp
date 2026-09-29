@@ -316,13 +316,21 @@ namespace bitcoinfuzz {
 namespace module {
 LibwallyCore::LibwallyCore(void) : BaseModule("LibwallyCore") {}
 
-std::optional<std::string>
-LibwallyCore::psbt_parse(std::span<const uint8_t> buffer) const {
+namespace {
+// Parses `buffer` and formats it for the PSBT differential targets. Returns
+// std::nullopt when the PSBT decodes fine but is of the other version (v2 vs
+// anything else), so it is left to the other target.
+std::optional<std::string> ParsePSBT(std::span<const uint8_t> buffer,
+                                     bool want_v2) {
   struct wally_psbt *psbt;
   int res = wally_psbt_from_bytes(buffer.data(), buffer.size(),
                                   WALLY_PSBT_PARSE_FLAG_STRICT, &psbt);
   if (res != WALLY_OK) {
     return std::string{"INVALID"};
+  }
+  if ((psbt->version == WALLY_PSBT_VERSION_2) != want_v2) {
+    wally_psbt_free(psbt);
+    return std::nullopt;
   }
 
   std::ostringstream result;
@@ -414,7 +422,7 @@ LibwallyCore::psbt_parse(std::span<const uint8_t> buffer) const {
       wally_psbt_free(psbt);
       // Conflicting per-input lock time requirements (BIP-370). This is a
       // well-defined "reject" outcome, not a generic parse failure, so use a
-      // non-empty sentinel (the driver's PSBTParseTarget skips empty results
+      // non-empty sentinel (the driver's PSBT targets skip empty results
       // from comparison entirely) to confirm every module agrees on
       // rejecting it, mirroring the other PSBTv2-aware modules.
       return std::string{"CONFLICTING_LOCKTIME"};
@@ -499,6 +507,18 @@ LibwallyCore::psbt_parse(std::span<const uint8_t> buffer) const {
 
   return result.str();
 }
+} // namespace
+
+std::optional<std::string>
+LibwallyCore::psbt_v0_parse(std::span<const uint8_t> buffer) const {
+  return ParsePSBT(buffer, /*want_v2=*/false);
+}
+
+std::optional<std::string>
+LibwallyCore::psbt_v2_parse(std::span<const uint8_t> buffer) const {
+  return ParsePSBT(buffer, /*want_v2=*/true);
+}
+
 std::optional<std::string>
 LibwallyCore::bip32_master_keygen(std::span<const uint8_t> seed) const {
   struct ext_key *master_key = nullptr;

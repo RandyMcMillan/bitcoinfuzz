@@ -190,8 +190,15 @@ public static class Bridge
         return PsbtMapHasSingleByteKey(psbtBytes, ref offset, PsbtInSequenceKey);
     }
 
-    [UnmanagedCallersOnly(EntryPoint = "nbitcoin_psbt_parse")]
-    public static IntPtr PsbtParse(IntPtr dataPtr, UIntPtr len)
+    [UnmanagedCallersOnly(EntryPoint = "nbitcoin_psbt_v0_parse")]
+    public static IntPtr PsbtV0Parse(IntPtr dataPtr, UIntPtr len) => PsbtParse(dataPtr, len, wantV2: false);
+
+    [UnmanagedCallersOnly(EntryPoint = "nbitcoin_psbt_v2_parse")]
+    public static IntPtr PsbtV2Parse(IntPtr dataPtr, UIntPtr len) => PsbtParse(dataPtr, len, wantV2: true);
+
+    // Returns null when the PSBT loads fine but is of the other version, so
+    // it's left to the other PSBT target.
+    private static IntPtr PsbtParse(IntPtr dataPtr, UIntPtr len, bool wantV2)
     {
         if (dataPtr == IntPtr.Zero || (int)len <= 0)
         {
@@ -205,6 +212,10 @@ public static class Bridge
 
             PSBT psbt = PSBT.Load(psbtBytes, Network.Main);
             bool isV2 = psbt.Version == PSBTVersion.PSBTv2;
+            if (isV2 != wantV2)
+            {
+                return IntPtr.Zero;
+            }
 
             Transaction tx;
             try
@@ -216,7 +227,7 @@ public static class Bridge
                 // Conflicting per-input lock time requirements (BIP-370) is a
                 // well-defined "reject" outcome, not a generic parse failure.
                 // Use a non-empty sentinel so it's actually compared across
-                // modules (the driver's PSBTParseTarget skips empty results
+                // modules (the driver's PSBT targets skip empty results
                 // from comparison entirely) rather than silently opted out,
                 // mirroring the other PSBTv2-aware modules.
                 return Marshal.StringToHGlobalAnsi("CONFLICTING_LOCKTIME");

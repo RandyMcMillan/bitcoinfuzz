@@ -666,10 +666,12 @@ DeterminePSBTLockTime(const PartiallySignedTransaction &psbt) {
   }
   return result;
 }
-} // namespace
 
-std::optional<std::string>
-Bitcoin::psbt_parse(std::span<const uint8_t> buffer) const {
+// Parses `buffer` and formats it for the PSBT differential targets. Returns
+// std::nullopt when the PSBT decodes fine but is of the other version (v2 vs
+// anything else), so it is left to the other target.
+std::optional<std::string> ParsePSBT(std::span<const uint8_t> buffer,
+                                     bool want_v2) {
   if (buffer.empty()) {
     return std::nullopt;
   }
@@ -680,6 +682,9 @@ Bitcoin::psbt_parse(std::span<const uint8_t> buffer) const {
     return std::string{"INVALID"};
   }
   const PartiallySignedTransaction psbt{*psbt_result};
+  if ((psbt.GetVersion() == 2) != want_v2) {
+    return std::nullopt;
+  }
 
   std::string result;
 
@@ -690,7 +695,7 @@ Bitcoin::psbt_parse(std::span<const uint8_t> buffer) const {
     if (!lock_time.has_value()) {
       // Conflicting per-input lock time requirements (BIP-370). This is a
       // well-defined "reject" outcome, not a generic parse failure, so use a
-      // non-empty sentinel (the driver's PSBTParseTarget skips empty results
+      // non-empty sentinel (the driver's PSBT targets skip empty results
       // from comparison entirely) to confirm every module agrees on
       // rejecting it, mirroring the other PSBTv2-aware modules.
       return std::string{"CONFLICTING_LOCKTIME"};
@@ -778,6 +783,17 @@ Bitcoin::psbt_parse(std::span<const uint8_t> buffer) const {
   }
 
   return result;
+}
+} // namespace
+
+std::optional<std::string>
+Bitcoin::psbt_v0_parse(std::span<const uint8_t> buffer) const {
+  return ParsePSBT(buffer, /*want_v2=*/false);
+}
+
+std::optional<std::string>
+Bitcoin::psbt_v2_parse(std::span<const uint8_t> buffer) const {
+  return ParsePSBT(buffer, /*want_v2=*/true);
 }
 
 namespace {

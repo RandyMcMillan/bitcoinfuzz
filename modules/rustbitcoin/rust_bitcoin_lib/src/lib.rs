@@ -195,15 +195,6 @@ pub unsafe extern "C" fn rust_bitcoin_address_parse(address: *const c_char) -> *
     }
 }
 
-#[no_mangle]
-pub unsafe extern "C" fn rust_bitcoin_psbt_parse(_data: *const u8, _len: usize) -> *mut c_char {
-    // PSBT support was extracted out of the `bitcoin` crate (into the
-    // separately-versioned `rust-psbt`) and is no longer available at this
-    // revision. Returning null makes the driver skip this module for the PSBT
-    // target instead of comparing against a value we can no longer produce.
-    std::ptr::null_mut()
-}
-
 /// Converts AddrV2 to hex string representation of its raw bytes
 fn addrv2_to_hex(addr: &AddrV2) -> String {
     match addr {

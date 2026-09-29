@@ -1,5 +1,6 @@
 use std::ffi::CString;
 use std::os::raw::c_char;
+use std::ptr;
 use std::slice;
 
 use psbt_v2::{DetermineLockTimeError, Psbt};
@@ -265,8 +266,10 @@ fn summarize(psbt: &Psbt) -> Result<String, DetermineLockTimeError> {
     Ok(format_result(lock_time, &inputs, &outputs))
 }
 
+// PSBTv0 target: a PSBT that only parses as v2 belongs to the v2 target, so
+// it's skipped (null) rather than reported as invalid.
 #[no_mangle]
-pub unsafe extern "C" fn rust_psbt_psbt_parse(data: *const u8, len: usize) -> *mut c_char {
+pub unsafe extern "C" fn rust_psbt_psbt_v0_parse(data: *const u8, len: usize) -> *mut c_char {
     let data_slice = slice::from_raw_parts(data, len);
 
     if let Some(result) = try_parse_v0(data_slice) {
@@ -274,13 +277,29 @@ pub unsafe extern "C" fn rust_psbt_psbt_parse(data: *const u8, len: usize) -> *m
     }
 
     match try_parse_v2(data_slice) {
+        Ok(_) | Err(TryParseV2Error::ConflictingLockTime) => ptr::null_mut(),
+        Err(TryParseV2Error::Invalid) => str_to_c_string("INVALID"),
+    }
+}
+
+// PSBTv2 target: a PSBT that parses as v0 belongs to the v0 target, so it's
+// skipped (null) rather than reported as invalid.
+#[no_mangle]
+pub unsafe extern "C" fn rust_psbt_psbt_v2_parse(data: *const u8, len: usize) -> *mut c_char {
+    let data_slice = slice::from_raw_parts(data, len);
+
+    if try_parse_v0(data_slice).is_some() {
+        return ptr::null_mut();
+    }
+
+    match try_parse_v2(data_slice) {
         Ok(result) => str_to_c_string(&result),
         // Conflicting per-input lock time requirements (BIP-370) is a
         // well-defined "reject" outcome, not a generic parse failure. Use a
         // non-empty sentinel so it's actually compared across modules (the
-        // driver's PSBTParseTarget skips empty results from comparison
-        // entirely) rather than silently opted out, mirroring the other
-        // PSBTv2-aware modules.
+        // driver's PSBT targets skip empty results from comparison entirely)
+        // rather than silently opted out, mirroring the other PSBTv2-aware
+        // modules.
         Err(TryParseV2Error::ConflictingLockTime) => str_to_c_string("CONFLICTING_LOCKTIME"),
         Err(TryParseV2Error::Invalid) => str_to_c_string("INVALID"),
     }

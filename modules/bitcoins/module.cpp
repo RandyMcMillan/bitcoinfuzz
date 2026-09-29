@@ -154,7 +154,7 @@ std::optional<std::string> BitcoinS::bip32_deserialize_extended_key(
 }
 
 std::optional<std::string>
-BitcoinS::psbt_parse(std::span<const uint8_t> buffer) const {
+BitcoinS::psbt_v0_parse(std::span<const uint8_t> buffer) const {
   auto result = call_static_bytes_method(&parsePSBTMethod, buffer);
   if (result.has_value() && result->empty()) {
     return std::nullopt;
