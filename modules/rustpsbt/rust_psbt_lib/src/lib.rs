@@ -2,8 +2,7 @@ use std::ffi::CString;
 use std::os::raw::c_char;
 use std::slice;
 
-use psbt_v2::v0::Psbt as PsbtV0;
-use psbt_v2::v2::Psbt as PsbtV2;
+use psbt_v2::{DetermineLockTimeError, Psbt};
 
 unsafe fn str_to_c_string(input: &str) -> *mut c_char {
     CString::new(input).unwrap().into_raw()
@@ -114,69 +113,12 @@ fn format_result(lock_time: u32, inputs: &[InputSummary], outputs: &[OutputSumma
     result
 }
 
+// rust-psbt decodes a PSBTv0 into the same `Psbt` type as a PSBTv2 (moving
+// the unsigned tx fields into the per-input/output maps), so both versions
+// share `summarize`.
 fn try_parse_v0(data: &[u8]) -> Option<String> {
-    let psbt = PsbtV0::deserialize(data).ok()?;
-
-    // refer: https://github.com/bitcoinfuzz/bitcoinfuzz/issues/134#issuecomment-2884936854 for typecasting
-    let lock_time = psbt.unsigned_tx.lock_time.to_consensus_u32();
-
-    let inputs: Vec<InputSummary> = psbt
-        .unsigned_tx
-        .input
-        .iter()
-        .zip(psbt.inputs.iter())
-        .map(|(txin, psbt_input)| InputSummary {
-            prev_txid: txin.previous_output.txid.to_string(),
-            prev_vout: txin.previous_output.vout,
-            sequence: Some(txin.sequence.0),
-            has_utxo: psbt_input.witness_utxo.is_some() || psbt_input.non_witness_utxo.is_some(),
-            partial_signatures: psbt_input.partial_sigs.len(),
-            redeem_script_hex: psbt_input
-                .redeem_script
-                .as_ref()
-                .map(|s| s.to_hex_string())
-                .unwrap_or_default(),
-            witness_script_hex: psbt_input
-                .witness_script
-                .as_ref()
-                .map(|s| s.to_hex_string())
-                .unwrap_or_default(),
-            sighash_type: psbt_input.sighash_type.map(|s| s.to_u32()).unwrap_or(0),
-            bip32_count: psbt_input.bip32_derivation.len(),
-            finalized: psbt_input
-                .final_script_sig
-                .as_ref()
-                .is_some_and(|s| !s.is_empty())
-                || psbt_input
-                    .final_script_witness
-                    .as_ref()
-                    .is_some_and(|w| !w.is_empty()),
-        })
-        .collect();
-
-    let outputs: Vec<OutputSummary> = psbt
-        .unsigned_tx
-        .output
-        .iter()
-        .zip(psbt.outputs.iter())
-        .map(|(output, psbt_output)| OutputSummary {
-            value: output.value.to_sat() as i64,
-            script_hex: output.script_pubkey.to_hex_string(),
-            redeem_script_hex: psbt_output
-                .redeem_script
-                .as_ref()
-                .map(|s| s.to_hex_string())
-                .unwrap_or_default(),
-            witness_script_hex: psbt_output
-                .witness_script
-                .as_ref()
-                .map(|s| s.to_hex_string())
-                .unwrap_or_default(),
-            bip32_count: psbt_output.bip32_derivation.len(),
-        })
-        .collect();
-
-    Some(format_result(lock_time, &inputs, &outputs))
+    let psbt = Psbt::deserialize_v0(data).ok()?;
+    summarize(&psbt).ok()
 }
 
 // Minimal CompactSize (Bitcoin's little-endian varint) decoder, returning
@@ -261,11 +203,12 @@ fn try_parse_v2(data: &[u8]) -> Result<String, TryParseV2Error> {
     if !v2_counts_are_plausible(data) {
         return Err(TryParseV2Error::Invalid);
     }
-    let psbt = PsbtV2::deserialize(data).map_err(|_| TryParseV2Error::Invalid)?;
-    let lock_time = psbt
-        .determine_lock_time()
-        .map_err(|_| TryParseV2Error::ConflictingLockTime)?
-        .to_consensus_u32();
+    let psbt = Psbt::deserialize(data).map_err(|_| TryParseV2Error::Invalid)?;
+    summarize(&psbt).map_err(|_| TryParseV2Error::ConflictingLockTime)
+}
+
+fn summarize(psbt: &Psbt) -> Result<String, DetermineLockTimeError> {
+    let lock_time = psbt.determine_lock_time()?.to_consensus_u32();
 
     let inputs: Vec<InputSummary> = psbt
         .inputs
