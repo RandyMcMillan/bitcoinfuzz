@@ -1,5 +1,6 @@
 using System.Runtime.InteropServices;
 using System.Text;
+using NBitcoin.BIP370;
 using NBitcoin.Secp256k1;
 using NBitcoin.WalletPolicies;
 
@@ -237,7 +238,18 @@ public static class Bridge
                 return Marshal.StringToHGlobalAnsi("");
             }
 
+            // BIP-370 fields, only emitted by the PSBTv2 target.
+            PSBT2? psbt2 = psbt as PSBT2;
+
             var result = new StringBuilder();
+            result.Append($"tx_version={(psbt2 != null ? psbt2.TransactionVersion : tx.Version)};");
+            if (psbt2 != null)
+            {
+                result.Append($"fallback_locktime={psbt2.FallbackLockTime?.Value.ToString() ?? ""};");
+                // An absent PSBT_GLOBAL_TX_MODIFIABLE is formatted as 0, since
+                // not every module can tell it apart from an explicit 0.
+                result.Append($"tx_modifiable={(byte)(psbt2.ModifiableFlags ?? 0)};");
+            }
             result.Append($"lock_time={tx.LockTime.Value};");
             result.Append($"inputs={tx.Inputs.Count};");
             result.Append($"outputs={tx.Outputs.Count};");
@@ -256,6 +268,18 @@ public static class Bridge
                 else
                 {
                     result.Append($"input{i}sequence=;");
+                }
+
+                if (psbt2 != null && i < psbt2.Inputs.Count && psbt2.Inputs[i] is PSBT2Input psbt2Input)
+                {
+                    string requiredTime = psbt2Input.LockTime.HasValue
+                        ? ((uint)psbt2Input.LockTime.Value.ToUnixTimeSeconds()).ToString()
+                        : "";
+                    string requiredHeight = psbt2Input.LockTimeHeight.HasValue
+                        ? ((uint)psbt2Input.LockTimeHeight.Value).ToString()
+                        : "";
+                    result.Append($"input{i}required_time={requiredTime};");
+                    result.Append($"input{i}required_height={requiredHeight};");
                 }
 
                 if (i < psbt.Inputs.Count)

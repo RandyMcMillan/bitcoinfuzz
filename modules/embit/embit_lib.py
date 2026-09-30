@@ -37,7 +37,7 @@ def psbt_v0_parse(data):
         result = []  # format similar to rustbitcoin implementation
 
         tx = psbt_obj.tx
-        # result.append(f"v={tx.version}")
+        result.append(f"tx_version={tx.version}")
         result.append(f"lock_time={tx.locktime}")
         result.append(f"inputs={len(tx.vin)}")
         result.append(f"outputs={len(tx.vout)}")

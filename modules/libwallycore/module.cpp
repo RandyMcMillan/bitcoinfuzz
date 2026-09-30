@@ -336,7 +336,8 @@ std::optional<std::string> ParsePSBT(std::span<const uint8_t> buffer,
   std::ostringstream result;
 
   if (psbt->tx) {
-    // PSBTv0: the global unsigned tx carries locktime/inputs/outputs.
+    // PSBTv0: the global unsigned tx carries version/locktime/inputs/outputs.
+    result << "tx_version=" << psbt->tx->version << ";";
     result << "lock_time=" << psbt->tx->locktime << ";";
     result << "inputs=" << psbt->tx->num_inputs << ";";
     result << "outputs=" << psbt->tx->num_outputs << ";";
@@ -428,6 +429,14 @@ std::optional<std::string> ParsePSBT(std::span<const uint8_t> buffer,
       return std::string{"CONFLICTING_LOCKTIME"};
     }
 
+    result << "tx_version=" << psbt->tx_version << ";";
+    result << "fallback_locktime=";
+    if (psbt->has_fallback_locktime) {
+      result << psbt->fallback_locktime;
+    }
+    result << ";";
+    // An absent PSBT_GLOBAL_TX_MODIFIABLE reads back as 0.
+    result << "tx_modifiable=" << psbt->tx_modifiable_flags << ";";
     result << "lock_time=" << *lock_time << ";";
     result << "inputs=" << psbt->num_inputs << ";";
     result << "outputs=" << psbt->num_outputs << ";";
@@ -452,6 +461,18 @@ std::optional<std::string> ParsePSBT(std::span<const uint8_t> buffer,
       } else {
         result << "input" << i << "sequence=" << ";";
       }
+
+      // 0 means "not given"; BIP-370 makes 0 invalid for both fields.
+      result << "input" << i << "required_time=";
+      if (psbt_input.required_locktime != 0) {
+        result << psbt_input.required_locktime;
+      }
+      result << ";";
+      result << "input" << i << "required_height=";
+      if (psbt_input.required_lockheight != 0) {
+        result << psbt_input.required_lockheight;
+      }
+      result << ";";
 
       if (psbt_input.utxo || psbt_input.witness_utxo) {
         result << "input" << i << "utxo=1" << ";";

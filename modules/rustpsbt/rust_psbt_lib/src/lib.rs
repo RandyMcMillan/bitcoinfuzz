@@ -23,15 +23,25 @@ pub unsafe extern "C" fn rust_psbt_free_c_string(ptr: *mut c_char) {
     }
 }
 
-// Version-agnostic view of the fields the differential fuzz target compares,
-// so PSBTv0 and PSBTv2 psbts are formatted identically (matching the
-// Bitcoin Core module's output format exactly).
+// Version-agnostic view of the fields the differential fuzz targets compare
+// (matching the Bitcoin Core module's output format exactly). The BIP-370
+// fields are only emitted by the PSBTv2 target.
+struct GlobalSummary {
+    tx_version: u32,
+    fallback_lock_time: Option<u32>,
+    // An absent PSBT_GLOBAL_TX_MODIFIABLE reads back as 0.
+    tx_modifiable: u8,
+    lock_time: u32,
+}
+
 struct InputSummary {
     prev_txid: String,
     prev_vout: u32,
     // `None` when the sequence number is omitted, which can only happen for
     // PSBTv2 (BIP-370 says it then defaults to the final sequence number).
     sequence: Option<u32>,
+    required_time: Option<u32>,
+    required_height: Option<u32>,
     has_utxo: bool,
     partial_signatures: usize,
     redeem_script_hex: String,
@@ -59,10 +69,27 @@ struct OutputSummary {
     bip32_count: usize,
 }
 
-fn format_result(lock_time: u32, inputs: &[InputSummary], outputs: &[OutputSummary]) -> String {
+fn opt_to_string(value: Option<u32>) -> String {
+    value.map(|v| v.to_string()).unwrap_or_default()
+}
+
+fn format_result(
+    v2: bool,
+    global: &GlobalSummary,
+    inputs: &[InputSummary],
+    outputs: &[OutputSummary],
+) -> String {
     let mut result = String::new();
 
-    result.push_str(&format!("lock_time={};", lock_time));
+    result.push_str(&format!("tx_version={};", global.tx_version));
+    if v2 {
+        result.push_str(&format!(
+            "fallback_locktime={};",
+            opt_to_string(global.fallback_lock_time)
+        ));
+        result.push_str(&format!("tx_modifiable={};", global.tx_modifiable));
+    }
+    result.push_str(&format!("lock_time={};", global.lock_time));
     result.push_str(&format!("inputs={};", inputs.len()));
     result.push_str(&format!("outputs={};", outputs.len()));
 
@@ -71,8 +98,24 @@ fn format_result(lock_time: u32, inputs: &[InputSummary], outputs: &[OutputSumma
             "input{}previous_output={}:{};",
             i, input.prev_txid, input.prev_vout
         ));
-        let sequence = input.sequence.map(|s| s.to_string()).unwrap_or_default();
-        result.push_str(&format!("input{}sequence={};", i, sequence));
+        result.push_str(&format!(
+            "input{}sequence={};",
+            i,
+            opt_to_string(input.sequence)
+        ));
+
+        if v2 {
+            result.push_str(&format!(
+                "input{}required_time={};",
+                i,
+                opt_to_string(input.required_time)
+            ));
+            result.push_str(&format!(
+                "input{}required_height={};",
+                i,
+                opt_to_string(input.required_height)
+            ));
+        }
 
         if input.has_utxo {
             result.push_str(&format!("input{}utxo=1;", i));
@@ -119,7 +162,7 @@ fn format_result(lock_time: u32, inputs: &[InputSummary], outputs: &[OutputSumma
 // share `summarize`.
 fn try_parse_v0(data: &[u8]) -> Option<String> {
     let psbt = Psbt::deserialize_v0(data).ok()?;
-    summarize(&psbt).ok()
+    summarize(&psbt, false).ok()
 }
 
 // Minimal CompactSize (Bitcoin's little-endian varint) decoder, returning
@@ -205,11 +248,19 @@ fn try_parse_v2(data: &[u8]) -> Result<String, TryParseV2Error> {
         return Err(TryParseV2Error::Invalid);
     }
     let psbt = Psbt::deserialize(data).map_err(|_| TryParseV2Error::Invalid)?;
-    summarize(&psbt).map_err(|_| TryParseV2Error::ConflictingLockTime)
+    summarize(&psbt, true).map_err(|_| TryParseV2Error::ConflictingLockTime)
 }
 
-fn summarize(psbt: &Psbt) -> Result<String, DetermineLockTimeError> {
-    let lock_time = psbt.determine_lock_time()?.to_consensus_u32();
+fn summarize(psbt: &Psbt, v2: bool) -> Result<String, DetermineLockTimeError> {
+    let global = GlobalSummary {
+        tx_version: psbt.global.tx_version.0 as u32,
+        fallback_lock_time: psbt
+            .global
+            .fallback_lock_time
+            .map(|lt| lt.to_consensus_u32()),
+        tx_modifiable: psbt.global.tx_modifiable_flags,
+        lock_time: psbt.determine_lock_time()?.to_consensus_u32(),
+    };
 
     let inputs: Vec<InputSummary> = psbt
         .inputs
@@ -218,6 +269,8 @@ fn summarize(psbt: &Psbt) -> Result<String, DetermineLockTimeError> {
             prev_txid: psbt_input.previous_txid.to_string(),
             prev_vout: psbt_input.spent_output_index,
             sequence: psbt_input.sequence.map(|s| s.0),
+            required_time: psbt_input.min_time.map(|t| t.to_consensus_u32()),
+            required_height: psbt_input.min_height.map(|h| h.to_consensus_u32()),
             has_utxo: psbt_input.witness_utxo.is_some() || psbt_input.non_witness_utxo.is_some(),
             partial_signatures: psbt_input.partial_sigs.len(),
             redeem_script_hex: psbt_input
@@ -263,7 +316,7 @@ fn summarize(psbt: &Psbt) -> Result<String, DetermineLockTimeError> {
         })
         .collect();
 
-    Ok(format_result(lock_time, &inputs, &outputs))
+    Ok(format_result(v2, &global, &inputs, &outputs))
 }
 
 // PSBTv0 target: a PSBT that only parses as v2 belongs to the v2 target, so
