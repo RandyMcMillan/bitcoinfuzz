@@ -1,6 +1,6 @@
 all: module.a
 
-CXXFLAGS += -Wall -Wextra -fsanitize=address,fuzzer -std=c++20 -I ../../include
+CXXFLAGS += -Wall -Wextra -O2 -std=c++20 -I ../../include
 
 UNAME_S := $(shell uname -s)
 ifeq ($(UNAME_S), Darwin)

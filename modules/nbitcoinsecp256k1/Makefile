@@ -1,6 +1,6 @@
 all: module.a
 
-CXXFLAGS += -Wall -Wextra -fsanitize=address,fuzzer -std=c++20 -I ../../include
+CXXFLAGS += -Wall -Wextra -O2 -std=c++20 -I ../../include
 
 UNAME_S := $(shell uname -s)
 RUNTIME_ID := $(shell echo $(UNAME_S)  | tr '[:upper:]' '[:lower:]' | sed 's/darwin/osx/')-$(shell uname -m | sed 's/x86_64/x64/; s/aarch64/arm64/')

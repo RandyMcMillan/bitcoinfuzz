@@ -1,6 +1,6 @@
 all: bitcoinfuzz
 
-BASE_CXXFLAGS := -fsanitize=address,fuzzer -Wall -Wextra -std=c++20 -I include -I .
+BASE_CXXFLAGS := -O2 -Wall -Wextra -std=c++20 -I include -I .
 UNAME_S := $(shell uname -s)
 BITCOINFUZZ_SRC := basemodule modulelogger
 BITCOINFUZZ_OBJS := $(addprefix include/bitcoinfuzz/, $(addsuffix .o, $(BITCOINFUZZ_SRC)))
@@ -218,8 +218,9 @@ endif
 
 CXXFLAGS := $(BASE_CXXFLAGS) $(JAVA_CXXFLAGS) $(CXXFLAGS) $(PYTHON_LDFLAGS) $(LIBBITCOIN_CXXFLAGS)
 
-bitcoinfuzz: main.cpp driver.o $(BITCOINFUZZ_OBJS) $(JVM_LOADER)
-	$(CXX) $(CXXFLAGS) $(LDFLAGS) main.cpp driver.o $(BITCOINFUZZ_OBJS) $(JVM_LOADER) $(MODULES) $(NBITCOIN_LIB) $(NLIGHTNING_LIB) $(NBITCOIN_SECP256K1_LIB) $(TINY_MINISCRIPT_LIB) -o bitcoinfuzz $(PYTHON_LDFLAGS) $(SODIUM_LDLIBS) $(LIBBITCOIN_LDLIBS)
+bitcoinfuzz: main.cpp driver.h driver.o $(BITCOINFUZZ_OBJS) $(JVM_LOADER)
+	$(CXX) $(CXXFLAGS) -c main.cpp -o main.o
+	$(CXX) $(CXXFLAGS) $(LDFLAGS) -fsanitize=address,fuzzer main.o driver.o $(BITCOINFUZZ_OBJS) $(JVM_LOADER) $(MODULES) $(NBITCOIN_LIB) $(NLIGHTNING_LIB) $(NBITCOIN_SECP256K1_LIB) $(TINY_MINISCRIPT_LIB) -o bitcoinfuzz $(PYTHON_LDFLAGS) $(SODIUM_LDLIBS) $(LIBBITCOIN_LDLIBS)
 
 driver.o: driver.cpp driver.h
 	$(CXX) $(CXXFLAGS) -c driver.cpp -o driver.o

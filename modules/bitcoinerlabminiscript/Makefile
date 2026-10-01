@@ -16,7 +16,7 @@ QJSC := $(QUICKJS_PREFIX)/bin/qjsc
 QUICKJS_INCLUDE_DIR := $(QUICKJS_PREFIX)/include/quickjs
 QUICKJS_LIB := $(QUICKJS_PREFIX)/lib/quickjs/libquickjs.a
 
-CXXFLAGS += -Wall -Wextra -fsanitize=fuzzer -std=c++20 -I ../../include -isystem $(QUICKJS_INCLUDE_DIR)
+CXXFLAGS += -Wall -Wextra -O2 -std=c++20 -I ../../include -isystem $(QUICKJS_INCLUDE_DIR)
 
 TS_DIR := ./ts
 NODE_MODULES_DIR := $(TS_DIR)/node_modules
@@ -51,7 +51,7 @@ $(BUNDLE_C): $(BUNDLE_JS) $(QJSC)
 	$(QJSC) -c -o $@ $(BUNDLE_JS)
 
 $(BUNDLE_O): $(BUNDLE_C)
-	$(CC) -Wall -Wextra -fsanitize=fuzzer -c $(BUNDLE_C) -o $@
+	$(CC) -Wall -Wextra -fsanitize=fuzzer-no-link -O1 -c $(BUNDLE_C) -o $@
 
 module.o: module.cpp module.h
 	$(CXX) $(CXXFLAGS) -fPIC -c module.cpp -o module.o

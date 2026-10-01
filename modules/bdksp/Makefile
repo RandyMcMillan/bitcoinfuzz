@@ -1,6 +1,6 @@
 all: module.a
 
-CXXFLAGS += -Wall -Wextra -fsanitize=address,fuzzer -std=c++20 -I ../../include
+CXXFLAGS += -Wall -Wextra -O2 -std=c++20 -I ../../include
 
 SP_LIB_PATH := ./sp_lib/target/release/libsp_lib.a
 

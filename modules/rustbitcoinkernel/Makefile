@@ -1,6 +1,6 @@
 all: module.a
 
-CXXFLAGS += -Wall -Wextra -fsanitize=address,fuzzer-no-link -std=c++20 -I ../../include
+CXXFLAGS += -Wall -Wextra -O2 -std=c++20 -I ../../include
 RUST_LIB_PATH := ./rustbitcoinkernel_lib/target/release/librustbitcoinkernel_lib.a
 
 SYMBOL_PREFIX ?= rustbitcoinkernel

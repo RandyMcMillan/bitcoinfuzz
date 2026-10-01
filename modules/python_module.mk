@@ -1,6 +1,6 @@
 all: module.a ../../$(MODULE_NAME)_main.py
 
-CXXFLAGS += -Wall -Wextra -fsanitize=address,fuzzer -std=c++20 -I ../../include
+CXXFLAGS += -Wall -Wextra -O2 -std=c++20 -I ../../include
 PYTHON_CFLAGS := $(shell python3-config --includes)
 
 ../../$(MODULE_NAME)_main.py: $(MODULE_NAME)_lib.py

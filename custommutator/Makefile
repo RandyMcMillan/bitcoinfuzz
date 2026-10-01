@@ -1,7 +1,7 @@
 all: module.a
 
 CXXFLAGS += -Wall -Wextra -std=c++20 \
-            -fsanitize=fuzzer,address \
+            -O2 \
             -I . \
             -I ../../include \
             -I /opt/homebrew/include \
@@ -26,7 +26,7 @@ $(SECP256K1_LIB):
 		--enable-module-schnorrsig \
 		--disable-shared \
 		--with-pic \
-		CFLAGS="-fsanitize=address,fuzzer-no-link" && \
+		CFLAGS="-fsanitize=address -O2" && \
 	$(MAKE)
 
 module.a: utils/bech32.o mutators/customcrossover.o $(SECP256K1_LIB) $(BITCOIN_OBJS)
@@ -72,7 +72,7 @@ LIBCLIGHTNING_WRAPPER := ./libcln.a
 
 $(LIGHTNING_DIR)/config.vars:
 	@echo "Running ./configure in $(LIGHTNING_DIR)..."
-	cd $(LIGHTNING_DIR) && ./configure --enable-address-sanitizer --disable-compat --enable-fuzzing --disable-valgrind --enable-debugbuild --enable-ub-sanitizer CWARNFLAGS="-Wall -Wundef -Wmissing-prototypes -Wmissing-declarations -Wstrict-prototypes -Wold-style-definition"
+	cd $(LIGHTNING_DIR) && ./configure --enable-address-sanitizer --disable-compat --enable-fuzzing --disable-valgrind --enable-debugbuild --enable-ub-sanitizer COPTFLAGS="-O1" CWARNFLAGS="-Wall -Wundef -Wmissing-prototypes -Wmissing-declarations -Wstrict-prototypes -Wold-style-definition"
 
 libcln.a: $(LIGHTNING_DIR)/config.vars
 	@marker="$$(head -n 2 $(CLIGHTNING_MAKEFILE) | tail -n 1)"; \

@@ -7,19 +7,14 @@
 #include <iostream>
 #include <memory>
 
-#if defined(__has_feature)
-#if __has_feature(address_sanitizer)
-#include <sanitizer/lsan_interface.h>
-#define BITCOINFUZZ_LSAN_IGNORE(ptr) __lsan_ignore_object(ptr)
-#else
-#define BITCOINFUZZ_LSAN_IGNORE(ptr)
-#endif
-#elif defined(__SANITIZE_ADDRESS__)
-#include <sanitizer/lsan_interface.h>
-#define BITCOINFUZZ_LSAN_IGNORE(ptr) __lsan_ignore_object(ptr)
-#else
-#define BITCOINFUZZ_LSAN_IGNORE(ptr)
-#endif
+// Resolved at link time: the ASan/LSan runtime is linked into the final binary
+// even though the harness is no longer compiled with -fsanitize=address.
+extern "C" __attribute__((weak)) void __lsan_ignore_object(const void *p);
+#define BITCOINFUZZ_LSAN_IGNORE(ptr)                                           \
+  do {                                                                         \
+    if (__lsan_ignore_object)                                                  \
+      __lsan_ignore_object(ptr);                                               \
+  } while (0)
 
 #ifdef BITCOIN_CORE
 #include <modules/bitcoin/module.h>

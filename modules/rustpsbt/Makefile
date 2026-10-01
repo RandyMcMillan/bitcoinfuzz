@@ -1,6 +1,6 @@
 all: module.a
 
-CXXFLAGS += -Wall -Wextra -fsanitize=address,fuzzer -std=c++20 -I ../../include
+CXXFLAGS += -Wall -Wextra -O2 -std=c++20 -I ../../include
 RUST_LIB_PATH := ./rust_psbt_lib/target/release/librust_psbt_lib.a
 
 # Namespace this module's vendored libsecp256k1 so it can be linked alongside

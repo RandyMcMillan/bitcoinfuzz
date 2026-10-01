@@ -1,4 +1,4 @@
-CXXFLAGS += -Wall -Wextra -std=c++20 -fPIC
+CXXFLAGS += -Wall -Wextra -std=c++20 -fPIC -fsanitize=address,fuzzer-no-link -O1
 INCLUDE_DIRS += -I.
 INCLUDE_DIRS += -I../../include
 INCLUDE_DIRS += -I../../external/lightning
@@ -28,7 +28,7 @@ all: module.a
 
 $(LIGHTNING_DIR)/config.vars:
 	@echo "Running ./configure in $(LIGHTNING_DIR)..."
-	cd $(LIGHTNING_DIR) && ./configure --enable-address-sanitizer --disable-compat --enable-fuzzing --disable-valgrind --enable-debugbuild --enable-ub-sanitizer CWARNFLAGS="-Wall -Wundef -Wmissing-prototypes -Wmissing-declarations -Wstrict-prototypes -Wold-style-definition"
+	cd $(LIGHTNING_DIR) && ./configure --enable-address-sanitizer --disable-compat --enable-fuzzing --disable-valgrind --enable-debugbuild --enable-ub-sanitizer COPTFLAGS="-O1" CWARNFLAGS="-Wall -Wundef -Wmissing-prototypes -Wmissing-declarations -Wstrict-prototypes -Wold-style-definition"
 
 libcln.a: $(LIGHTNING_DIR)/config.vars
 	@echo "Appending Makefile-clightning to $(LIGHTNING_DIR)/Makefile if not already present..."

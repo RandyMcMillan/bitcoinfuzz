@@ -1,4 +1,4 @@
-CXXFLAGS += -Wall -Wextra -std=c++20 -I. -I ../../include -I./utreexo_wrapper
+CXXFLAGS += -Wall -Wextra -std=c++20 -O2 -I. -I ../../include -I./utreexo_wrapper
 
 all: module.a
 
