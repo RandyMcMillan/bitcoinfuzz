@@ -225,14 +225,30 @@ services:
     volumes:
       - ./docker:/app/data
 
-  psbt_parse:
+  psbt_v0_parse:
     build:
       context: .
       tags:
-        - bitcoinfuzz:psbt_parse
+        - bitcoinfuzz:psbt_v0_parse
       args:
-        CXXFLAGS: "-DEMBIT -DRUST_PSBT -DBTCD -DBITCOIN_CORE -DNBITCOIN -DLIBWALLY_CORE -DBITCOINS -DCUSTOM_MUTATOR_PSBT"
-        FUZZ: psbt_parse
+        CXXFLAGS: "-DEMBIT -DRUST_PSBT -DBTCD -DBITCOIN_CORE -DNBITCOIN -DLIBWALLY_CORE -DBITCOINS -DCUSTOM_MUTATOR_PSBT_V0"
+        FUZZ: psbt_v0_parse
+    env_file: .env
+    environment:
+      MODULES: ${MODULES:-}
+      LIBFUZZ_DETECT_LEAKS: 0
+      ASAN_OPTIONS: detect_leaks=0
+    volumes:
+      - ./docker:/app/data
+
+  psbt_v2_parse:
+    build:
+      context: .
+      tags:
+        - bitcoinfuzz:psbt_v2_parse
+      args:
+        CXXFLAGS: "-DRUST_PSBT -DBITCOIN_CORE -DNBITCOIN -DLIBWALLY_CORE -DCUSTOM_MUTATOR_PSBT_V2"
+        FUZZ: psbt_v2_parse
     env_file: .env
     environment:
       MODULES: ${MODULES:-}

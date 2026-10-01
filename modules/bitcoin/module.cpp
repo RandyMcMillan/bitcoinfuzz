@@ -666,10 +666,17 @@ DeterminePSBTLockTime(const PartiallySignedTransaction &psbt) {
   }
   return result;
 }
-} // namespace
 
-std::optional<std::string>
-Bitcoin::psbt_parse(std::span<const uint8_t> buffer) const {
+// Formats an optional PSBT field, empty when absent.
+std::string OptionalToString(const std::optional<uint32_t> &value) {
+  return value.has_value() ? std::to_string(*value) : "";
+}
+
+// Parses `buffer` and formats it for the PSBT differential targets. Returns
+// std::nullopt when the PSBT decodes fine but is of the other version (v2 vs
+// anything else), so it is left to the other target.
+std::optional<std::string> ParsePSBT(std::span<const uint8_t> buffer,
+                                     bool want_v2) {
   if (buffer.empty()) {
     return std::nullopt;
   }
@@ -680,20 +687,35 @@ Bitcoin::psbt_parse(std::span<const uint8_t> buffer) const {
     return std::string{"INVALID"};
   }
   const PartiallySignedTransaction psbt{*psbt_result};
+  if ((psbt.GetVersion() == 2) != want_v2) {
+    return std::nullopt;
+  }
 
   std::string result;
 
   try {
-    // Extract high-level transaction properties (matching rust-bitcoin format)
-    // result += "v=" + std::to_string(tx.version) + ";";
     const std::optional<uint32_t> lock_time{DeterminePSBTLockTime(psbt)};
     if (!lock_time.has_value()) {
       // Conflicting per-input lock time requirements (BIP-370). This is a
       // well-defined "reject" outcome, not a generic parse failure, so use a
-      // non-empty sentinel (the driver's PSBTParseTarget skips empty results
+      // non-empty sentinel (the driver's PSBT targets skip empty results
       // from comparison entirely) to confirm every module agrees on
       // rejecting it, mirroring the other PSBTv2-aware modules.
       return std::string{"CONFLICTING_LOCKTIME"};
+    }
+    // For PSBTv0, tx_version is taken from the global unsigned tx.
+    result += "tx_version=" + std::to_string(psbt.tx_version) + ";";
+    if (want_v2) {
+      // BIP-370 global fields, only compared among the v2-aware modules. An
+      // absent PSBT_GLOBAL_TX_MODIFIABLE is formatted as 0, since not every
+      // module can tell it apart from an explicit 0.
+      result +=
+          "fallback_locktime=" + OptionalToString(psbt.fallback_locktime) + ";";
+      result += "tx_modifiable=" +
+                std::to_string(psbt.m_tx_modifiable.has_value()
+                                   ? psbt.m_tx_modifiable->to_ulong()
+                                   : 0) +
+                ";";
     }
     result += "lock_time=" + std::to_string(*lock_time) + ";";
     result += "inputs=" + std::to_string(psbt.inputs.size()) + ";";
@@ -713,6 +735,13 @@ Bitcoin::psbt_parse(std::span<const uint8_t> buffer) const {
                               ? std::to_string(psbt_input.sequence.value())
                               : ""};
       result += "input" + std::to_string(i) + "sequence=" + sequence + ";";
+
+      if (want_v2) {
+        result += "input" + std::to_string(i) + "required_time=" +
+                  OptionalToString(psbt_input.time_locktime) + ";";
+        result += "input" + std::to_string(i) + "required_height=" +
+                  OptionalToString(psbt_input.height_locktime) + ";";
+      }
 
       // UTXO availability (check both witness and non-witness UTXO)
       bool has_utxo = false;
@@ -778,6 +807,17 @@ Bitcoin::psbt_parse(std::span<const uint8_t> buffer) const {
   }
 
   return result;
+}
+} // namespace
+
+std::optional<std::string>
+Bitcoin::psbt_v0_parse(std::span<const uint8_t> buffer) const {
+  return ParsePSBT(buffer, /*want_v2=*/false);
+}
+
+std::optional<std::string>
+Bitcoin::psbt_v2_parse(std::span<const uint8_t> buffer) const {
+  return ParsePSBT(buffer, /*want_v2=*/true);
 }
 
 namespace {

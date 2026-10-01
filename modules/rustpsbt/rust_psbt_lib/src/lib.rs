@@ -1,9 +1,9 @@
 use std::ffi::CString;
 use std::os::raw::c_char;
+use std::ptr;
 use std::slice;
 
-use psbt_v2::v0::Psbt as PsbtV0;
-use psbt_v2::v2::Psbt as PsbtV2;
+use psbt_v2::{DetermineLockTimeError, Psbt};
 
 unsafe fn str_to_c_string(input: &str) -> *mut c_char {
     CString::new(input).unwrap().into_raw()
@@ -23,15 +23,25 @@ pub unsafe extern "C" fn rust_psbt_free_c_string(ptr: *mut c_char) {
     }
 }
 
-// Version-agnostic view of the fields the differential fuzz target compares,
-// so PSBTv0 and PSBTv2 psbts are formatted identically (matching the
-// Bitcoin Core module's output format exactly).
+// Version-agnostic view of the fields the differential fuzz targets compare
+// (matching the Bitcoin Core module's output format exactly). The BIP-370
+// fields are only emitted by the PSBTv2 target.
+struct GlobalSummary {
+    tx_version: u32,
+    fallback_lock_time: Option<u32>,
+    // An absent PSBT_GLOBAL_TX_MODIFIABLE reads back as 0.
+    tx_modifiable: u8,
+    lock_time: u32,
+}
+
 struct InputSummary {
     prev_txid: String,
     prev_vout: u32,
     // `None` when the sequence number is omitted, which can only happen for
     // PSBTv2 (BIP-370 says it then defaults to the final sequence number).
     sequence: Option<u32>,
+    required_time: Option<u32>,
+    required_height: Option<u32>,
     has_utxo: bool,
     partial_signatures: usize,
     redeem_script_hex: String,
@@ -59,10 +69,27 @@ struct OutputSummary {
     bip32_count: usize,
 }
 
-fn format_result(lock_time: u32, inputs: &[InputSummary], outputs: &[OutputSummary]) -> String {
+fn opt_to_string(value: Option<u32>) -> String {
+    value.map(|v| v.to_string()).unwrap_or_default()
+}
+
+fn format_result(
+    v2: bool,
+    global: &GlobalSummary,
+    inputs: &[InputSummary],
+    outputs: &[OutputSummary],
+) -> String {
     let mut result = String::new();
 
-    result.push_str(&format!("lock_time={};", lock_time));
+    result.push_str(&format!("tx_version={};", global.tx_version));
+    if v2 {
+        result.push_str(&format!(
+            "fallback_locktime={};",
+            opt_to_string(global.fallback_lock_time)
+        ));
+        result.push_str(&format!("tx_modifiable={};", global.tx_modifiable));
+    }
+    result.push_str(&format!("lock_time={};", global.lock_time));
     result.push_str(&format!("inputs={};", inputs.len()));
     result.push_str(&format!("outputs={};", outputs.len()));
 
@@ -71,8 +98,24 @@ fn format_result(lock_time: u32, inputs: &[InputSummary], outputs: &[OutputSumma
             "input{}previous_output={}:{};",
             i, input.prev_txid, input.prev_vout
         ));
-        let sequence = input.sequence.map(|s| s.to_string()).unwrap_or_default();
-        result.push_str(&format!("input{}sequence={};", i, sequence));
+        result.push_str(&format!(
+            "input{}sequence={};",
+            i,
+            opt_to_string(input.sequence)
+        ));
+
+        if v2 {
+            result.push_str(&format!(
+                "input{}required_time={};",
+                i,
+                opt_to_string(input.required_time)
+            ));
+            result.push_str(&format!(
+                "input{}required_height={};",
+                i,
+                opt_to_string(input.required_height)
+            ));
+        }
 
         if input.has_utxo {
             result.push_str(&format!("input{}utxo=1;", i));
@@ -114,69 +157,12 @@ fn format_result(lock_time: u32, inputs: &[InputSummary], outputs: &[OutputSumma
     result
 }
 
+// rust-psbt decodes a PSBTv0 into the same `Psbt` type as a PSBTv2 (moving
+// the unsigned tx fields into the per-input/output maps), so both versions
+// share `summarize`.
 fn try_parse_v0(data: &[u8]) -> Option<String> {
-    let psbt = PsbtV0::deserialize(data).ok()?;
-
-    // refer: https://github.com/bitcoinfuzz/bitcoinfuzz/issues/134#issuecomment-2884936854 for typecasting
-    let lock_time = psbt.unsigned_tx.lock_time.to_consensus_u32();
-
-    let inputs: Vec<InputSummary> = psbt
-        .unsigned_tx
-        .input
-        .iter()
-        .zip(psbt.inputs.iter())
-        .map(|(txin, psbt_input)| InputSummary {
-            prev_txid: txin.previous_output.txid.to_string(),
-            prev_vout: txin.previous_output.vout,
-            sequence: Some(txin.sequence.0),
-            has_utxo: psbt_input.witness_utxo.is_some() || psbt_input.non_witness_utxo.is_some(),
-            partial_signatures: psbt_input.partial_sigs.len(),
-            redeem_script_hex: psbt_input
-                .redeem_script
-                .as_ref()
-                .map(|s| s.to_hex_string())
-                .unwrap_or_default(),
-            witness_script_hex: psbt_input
-                .witness_script
-                .as_ref()
-                .map(|s| s.to_hex_string())
-                .unwrap_or_default(),
-            sighash_type: psbt_input.sighash_type.map(|s| s.to_u32()).unwrap_or(0),
-            bip32_count: psbt_input.bip32_derivation.len(),
-            finalized: psbt_input
-                .final_script_sig
-                .as_ref()
-                .is_some_and(|s| !s.is_empty())
-                || psbt_input
-                    .final_script_witness
-                    .as_ref()
-                    .is_some_and(|w| !w.is_empty()),
-        })
-        .collect();
-
-    let outputs: Vec<OutputSummary> = psbt
-        .unsigned_tx
-        .output
-        .iter()
-        .zip(psbt.outputs.iter())
-        .map(|(output, psbt_output)| OutputSummary {
-            value: output.value.to_sat() as i64,
-            script_hex: output.script_pubkey.to_hex_string(),
-            redeem_script_hex: psbt_output
-                .redeem_script
-                .as_ref()
-                .map(|s| s.to_hex_string())
-                .unwrap_or_default(),
-            witness_script_hex: psbt_output
-                .witness_script
-                .as_ref()
-                .map(|s| s.to_hex_string())
-                .unwrap_or_default(),
-            bip32_count: psbt_output.bip32_derivation.len(),
-        })
-        .collect();
-
-    Some(format_result(lock_time, &inputs, &outputs))
+    let psbt = Psbt::deserialize_v0(data).ok()?;
+    summarize(&psbt, false).ok()
 }
 
 // Minimal CompactSize (Bitcoin's little-endian varint) decoder, returning
@@ -261,11 +247,20 @@ fn try_parse_v2(data: &[u8]) -> Result<String, TryParseV2Error> {
     if !v2_counts_are_plausible(data) {
         return Err(TryParseV2Error::Invalid);
     }
-    let psbt = PsbtV2::deserialize(data).map_err(|_| TryParseV2Error::Invalid)?;
-    let lock_time = psbt
-        .determine_lock_time()
-        .map_err(|_| TryParseV2Error::ConflictingLockTime)?
-        .to_consensus_u32();
+    let psbt = Psbt::deserialize(data).map_err(|_| TryParseV2Error::Invalid)?;
+    summarize(&psbt, true).map_err(|_| TryParseV2Error::ConflictingLockTime)
+}
+
+fn summarize(psbt: &Psbt, v2: bool) -> Result<String, DetermineLockTimeError> {
+    let global = GlobalSummary {
+        tx_version: psbt.global.tx_version.0 as u32,
+        fallback_lock_time: psbt
+            .global
+            .fallback_lock_time
+            .map(|lt| lt.to_consensus_u32()),
+        tx_modifiable: psbt.global.tx_modifiable_flags,
+        lock_time: psbt.determine_lock_time()?.to_consensus_u32(),
+    };
 
     let inputs: Vec<InputSummary> = psbt
         .inputs
@@ -274,6 +269,8 @@ fn try_parse_v2(data: &[u8]) -> Result<String, TryParseV2Error> {
             prev_txid: psbt_input.previous_txid.to_string(),
             prev_vout: psbt_input.spent_output_index,
             sequence: psbt_input.sequence.map(|s| s.0),
+            required_time: psbt_input.min_time.map(|t| t.to_consensus_u32()),
+            required_height: psbt_input.min_height.map(|h| h.to_consensus_u32()),
             has_utxo: psbt_input.witness_utxo.is_some() || psbt_input.non_witness_utxo.is_some(),
             partial_signatures: psbt_input.partial_sigs.len(),
             redeem_script_hex: psbt_input
@@ -319,11 +316,13 @@ fn try_parse_v2(data: &[u8]) -> Result<String, TryParseV2Error> {
         })
         .collect();
 
-    Ok(format_result(lock_time, &inputs, &outputs))
+    Ok(format_result(v2, &global, &inputs, &outputs))
 }
 
+// PSBTv0 target: a PSBT that only parses as v2 belongs to the v2 target, so
+// it's skipped (null) rather than reported as invalid.
 #[no_mangle]
-pub unsafe extern "C" fn rust_psbt_psbt_parse(data: *const u8, len: usize) -> *mut c_char {
+pub unsafe extern "C" fn rust_psbt_psbt_v0_parse(data: *const u8, len: usize) -> *mut c_char {
     let data_slice = slice::from_raw_parts(data, len);
 
     if let Some(result) = try_parse_v0(data_slice) {
@@ -331,13 +330,29 @@ pub unsafe extern "C" fn rust_psbt_psbt_parse(data: *const u8, len: usize) -> *m
     }
 
     match try_parse_v2(data_slice) {
+        Ok(_) | Err(TryParseV2Error::ConflictingLockTime) => ptr::null_mut(),
+        Err(TryParseV2Error::Invalid) => str_to_c_string("INVALID"),
+    }
+}
+
+// PSBTv2 target: a PSBT that parses as v0 belongs to the v0 target, so it's
+// skipped (null) rather than reported as invalid.
+#[no_mangle]
+pub unsafe extern "C" fn rust_psbt_psbt_v2_parse(data: *const u8, len: usize) -> *mut c_char {
+    let data_slice = slice::from_raw_parts(data, len);
+
+    if try_parse_v0(data_slice).is_some() {
+        return ptr::null_mut();
+    }
+
+    match try_parse_v2(data_slice) {
         Ok(result) => str_to_c_string(&result),
         // Conflicting per-input lock time requirements (BIP-370) is a
         // well-defined "reject" outcome, not a generic parse failure. Use a
         // non-empty sentinel so it's actually compared across modules (the
-        // driver's PSBTParseTarget skips empty results from comparison
-        // entirely) rather than silently opted out, mirroring the other
-        // PSBTv2-aware modules.
+        // driver's PSBT targets skip empty results from comparison entirely)
+        // rather than silently opted out, mirroring the other PSBTv2-aware
+        // modules.
         Err(TryParseV2Error::ConflictingLockTime) => str_to_c_string("CONFLICTING_LOCKTIME"),
         Err(TryParseV2Error::Invalid) => str_to_c_string("INVALID"),
     }

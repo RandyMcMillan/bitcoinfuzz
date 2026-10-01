@@ -101,8 +101,8 @@ the image. Any target can be picked per container with `-e FUZZ=`, and its corpu
 their own subfolder of `/app/data`:
 
 ```bash
-docker run --rm -e FUZZ=psbt_parse -v "$(pwd)/docker":/app/data bitcoinfuzz:script
-# -> corpus in ./docker/psbt_parse/corpus, crashes in ./docker/psbt_parse/crash
+docker run --rm -e FUZZ=psbt_v0_parse -v "$(pwd)/docker":/app/data bitcoinfuzz:script
+# -> corpus in ./docker/psbt_v0_parse/corpus, crashes in ./docker/psbt_v0_parse/crash
 ```
 
 Set `FUZZ_DATAROOT` to relocate the parent folder, or `FUZZ_DATADIR` to override the full path.

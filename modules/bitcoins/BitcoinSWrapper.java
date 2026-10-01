@@ -82,6 +82,8 @@ public class BitcoinSWrapper {
       Transaction tx = psbt.transaction();
 
       StringBuilder sb = new StringBuilder();
+      // Int32 is signed; print it unsigned like every other module.
+      sb.append("tx_version=").append(Integer.toUnsignedString(tx.version().toInt())).append(";");
       sb.append("lock_time=").append(tx.lockTime().toLong()).append(";");
       sb.append("inputs=").append(tx.inputs().size()).append(";");
       sb.append("outputs=").append(tx.outputs().size()).append(";");

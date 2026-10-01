@@ -205,7 +205,7 @@
 #include <custommutator/mutators/schnorr_signature.h>
 #endif
 
-#ifdef CUSTOM_MUTATOR_PSBT
+#if defined(CUSTOM_MUTATOR_PSBT_V0) || defined(CUSTOM_MUTATOR_PSBT_V2)
 #include <custommutator/mutators/psbt.h>
 #endif
 
@@ -272,8 +272,12 @@ inline void LoadModules([[maybe_unused]] std::shared_ptr<Driver> driver,
   module_logger.addCustomMutator("Schnorr Signature Custom Mutator");
 #endif
 
-#ifdef CUSTOM_MUTATOR_PSBT
-  module_logger.addCustomMutator("PSBT Custom Mutator");
+#ifdef CUSTOM_MUTATOR_PSBT_V0
+  module_logger.addCustomMutator("PSBTv0 Custom Mutator");
+#endif
+
+#ifdef CUSTOM_MUTATOR_PSBT_V2
+  module_logger.addCustomMutator("PSBTv2 Custom Mutator");
 #endif
 
   module_logger.logModules();

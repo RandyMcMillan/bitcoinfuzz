@@ -137,9 +137,9 @@ bool embit_descriptor_parse(std::string input) {
       convert_to_bool);
 }
 
-char *embit_psbt_parse(const uint8_t *data, size_t len) {
+char *embit_psbt_v0_parse(const uint8_t *data, size_t len) {
   return call_python_function<const uint8_t *, char *>(
-      data, len, "psbt_parse", create_bytes_object, convert_to_string);
+      data, len, "psbt_v0_parse", create_bytes_object, convert_to_string);
 }
 
 char *embit_bip32_master_keygen(const uint8_t *data, size_t len) {
@@ -174,8 +174,8 @@ std::optional<bool> Embit::descriptor_parse(std::string str) const {
 }
 
 std::optional<std::string>
-Embit::psbt_parse(std::span<const uint8_t> buffer) const {
-  auto result_ptr = embit_psbt_parse(buffer.data(), buffer.size());
+Embit::psbt_v0_parse(std::span<const uint8_t> buffer) const {
+  auto result_ptr = embit_psbt_v0_parse(buffer.data(), buffer.size());
   if (result_ptr == nullptr)
     return std::nullopt;
 
