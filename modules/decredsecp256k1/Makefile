@@ -1,4 +1,4 @@
-CXXFLAGS += -Wall -Wextra -std=c++20 -I. -I ../../include -I./decredsecp256k1_wrapper
+CXXFLAGS += -Wall -Wextra -std=c++20 -O2 -I. -I ../../include -I./decredsecp256k1_wrapper
 
 SYMBOL_PREFIX ?= decredsecp256k1
 

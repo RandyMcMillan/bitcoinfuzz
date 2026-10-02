@@ -1,7 +1,7 @@
 all: module.a
 
 CXXFLAGS += -Wall -Wextra -std=c++20 \
-            -fsanitize=fuzzer,address \
+            -fsanitize=fuzzer-no-link,address -O1 \
             -I . \
             -I ../../include \
             -I ../../external/libwally-core/include \
@@ -32,7 +32,7 @@ $(LIBWALLY_CORE_LIB):
 		--disable-elements \
 		--disable-elements-abi \
 		--disable-tests \
-		CFLAGS="-fsanitize=address,fuzzer-no-link" && \
+		CFLAGS="-fsanitize=address,fuzzer-no-link -O1" && \
 	$(MAKE)
 
 # Generate symbol redefine map: prefix every global symbol defined in

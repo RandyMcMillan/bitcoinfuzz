@@ -1,6 +1,6 @@
 all: module.a
 
-CXXFLAGS += -Wall -Wextra -fsanitize=address,fuzzer -std=c++20 -I ../../include
+CXXFLAGS += -Wall -Wextra -O2 -std=c++20 -I ../../include
 RUSTREEXO_LIB_PATH := ./rustreexo_lib/target/release/librustreexo_lib.a
 
 $(RUSTREEXO_LIB_PATH):

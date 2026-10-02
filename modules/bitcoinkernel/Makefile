@@ -1,6 +1,6 @@
 all: module.a
 
-CXXFLAGS += -Wall -Wextra -std=c++20 -I ../../include
+CXXFLAGS += -Wall -Wextra -std=c++20 -fsanitize=address,fuzzer-no-link -O1 -I ../../include
 
 BITCOIN_DIR := bitcoin
 BITCOIN_URL := https://github.com/bitcoin/bitcoin.git

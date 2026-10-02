@@ -24,7 +24,7 @@ CLANG_WARNING_FLAGS = -Wno-deprecated-literal-operator -Wno-macro-redefined
 
 CXXFLAGS += $(CLANG_WARNING_FLAGS) \
             -Wall -Wextra -std=c++20 \
-            -fsanitize=address,fuzzer-no-link \
+            -fsanitize=address,fuzzer-no-link -O1 \
             -DNDEBUG \
             -I . \
             -I ../../include \

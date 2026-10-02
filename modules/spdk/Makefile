@@ -1,6 +1,6 @@
 all: module.a
 
-CXXFLAGS += -Wall -Wextra -fsanitize=address,fuzzer -std=c++20 -I ../../include
+CXXFLAGS += -Wall -Wextra -O2 -std=c++20 -I ../../include
 
 # The label API lives behind the crate's receiving feature, which pulls in
 # serde_derive. That is a proc macro, so it is built for the host and loaded

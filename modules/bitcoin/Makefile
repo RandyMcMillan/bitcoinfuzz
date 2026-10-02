@@ -14,7 +14,7 @@ UNIVALUE_DIR = $(BITCOIN_SRC)/univalue
 LEVELDB_DIR = $(BITCOIN_SRC)/leveldb
 
 CXXFLAGS += -Wall -Wextra -std=c++20 \
-            -fsanitize=fuzzer,address \
+            -fsanitize=fuzzer-no-link,address -O1 \
             -I . \
             -I $(BITCOIN_SRC) \
             -I ../../include \
@@ -176,7 +176,7 @@ $(SECP256K1_LIB):
 		--enable-module-musig \
 		--disable-shared \
 		--with-pic \
-		CFLAGS="-fsanitize=address,fuzzer-no-link" && \
+		CFLAGS="-fsanitize=address,fuzzer-no-link -O1" && \
 	$(MAKE)
 	@test -f $(SECP256K1_LIB) || { echo "ERROR: $(SECP256K1_LIB) not created"; exit 1; }
 
@@ -186,7 +186,7 @@ UNIVALUE_OBJS := $(addprefix build/univalue/, $(UNIVALUE_SRCS:.cpp=.o))
 
 build/univalue/%.o: $(UNIVALUE_DIR)/lib/%.cpp
 	@mkdir -p $(dir $@)
-	$(CXX) -std=c++20 -fPIC -fsanitize=fuzzer-no-link -I$(UNIVALUE_DIR)/include -c $< -o $@
+	$(CXX) -std=c++20 -fPIC -O1 -fsanitize=fuzzer-no-link -I$(UNIVALUE_DIR)/include -c $< -o $@
 
 $(UNIVALUE_LIB): $(UNIVALUE_OBJS)
 	@echo "Building univalue..."
@@ -238,7 +238,7 @@ LEVELDB_OBJS := $(addprefix build/leveldb/, $(LEVELDB_SRCS:.cc=.o))
 
 LEVELDB_PORT_CONFIG = build/leveldb/port/port_config.h
 
-LEVELDB_CXXFLAGS = -std=c++17 -fPIC \
+LEVELDB_CXXFLAGS = -std=c++17 -fPIC -O1 \
     -DLEVELDB_PLATFORM_POSIX \
     -DHAVE_FDATASYNC=1 \
     -DHAVE_O_CLOEXEC=1 \

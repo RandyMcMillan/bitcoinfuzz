@@ -12,7 +12,7 @@ TS_SOURCES := $(TS_DIR)/src/index.ts
 # so the runner is located at runtime by absolute path.
 RUNNER_PATH := $(shell pwd)/$(RUNNER_JS)
 
-CXXFLAGS += -Wall -Wextra -fsanitize=address,fuzzer -std=c++20 -I ../../include \
+CXXFLAGS += -Wall -Wextra -O2 -std=c++20 -I ../../include \
 	-DBLUEWALLET_SP_RUNNER=\"$(RUNNER_PATH)\"
 
 module.a: module.o $(RUNNER_JS)

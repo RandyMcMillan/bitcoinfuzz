@@ -1,7 +1,7 @@
 all: module.a
 
 CXXFLAGS += -Wall -Wextra -std=c++20 \
-            -fsanitize=fuzzer,address \
+            -fsanitize=fuzzer-no-link,address -O1 \
             -I . \
             -I ../../include \
             -I /opt/homebrew/include \
@@ -22,7 +22,7 @@ $(SECP256K1_LIB):
 		--enable-module-silentpayments \
 		--disable-shared \
 		--with-pic \
-		CFLAGS="-fsanitize=address,fuzzer-no-link" && \
+		CFLAGS="-fsanitize=address,fuzzer-no-link -O1" && \
 	$(MAKE)
 
 module.a: $(SECP256K1_LIB) module.o

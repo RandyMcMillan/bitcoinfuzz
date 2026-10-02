@@ -1,6 +1,6 @@
 all: module.a
 
-CXXFLAGS += -Wall -Wextra -std=c++20 -I ../../include
+CXXFLAGS += -Wall -Wextra -std=c++20 -fsanitize=address,fuzzer-no-link -O1 -I ../../include
 
 SYMBOL_PREFIX ?= variant
 BITCOIN_DIR := bitcoin
